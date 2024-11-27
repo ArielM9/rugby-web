@@ -208,5 +208,65 @@ def login_user():
     finally:
         connection.close()
 
+@app.route('/api/favoritos', methods=['POST'])
+def agregar_favorito():
+    data = request.json
+    id_usuario = data.get("id_usuario")
+    id_equipo = data.get("id_equipo")
+    id_liga = data.get("id_liga")
+
+    if not id_usuario or (not id_equipo and not id_liga):
+        return jsonify({"error": "Datos incompletos"}), 400
+
+    if id_equipo and id_liga:
+        return jsonify({"error": "Solo puede enviarse id_equipo o id_liga, no ambos"}), 400
+
+    try:
+        with db.cursor() as cursor:
+            # Comprueba duplicados
+            cursor.execute("""
+                SELECT * FROM favoritos 
+                WHERE id_usuario = %s AND id_equipo = %s AND id_liga = %s
+            """, (id_usuario, id_equipo, id_liga))
+            if cursor.fetchone():
+                return jsonify({"error": "El favorito ya existe"}), 400
+
+            # Inserta favorito
+            cursor.execute("""
+                INSERT INTO favoritos (id_usuario, id_equipo, id_liga) 
+                VALUES (%s, %s, %s)
+            """, (id_usuario, id_equipo, id_liga))
+            db.commit()
+        return jsonify({"message": "Favorito agregado correctamente"}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/usuarios/recuperar', methods=['POST'])
+def recuperar_contrasena():
+    data = request.json
+    email = data.get('email')
+
+    try:
+        with db.cursor() as cursor:
+            # Verifica que el correo exista
+            cursor.execute("SELECT id FROM usuarios WHERE email = %s", (email,))
+            user = cursor.fetchone()
+            if not user:
+                return jsonify({"error": "Correo no encontrado"}), 404
+
+            # Genera un token único
+            token = jwt.encode({"user_id": user[0]}, SECRET_KEY, algorithm="HS256")
+
+            # Enviar correo con el enlace (ejemplo simple)
+            with SMTP("smtp.miemail.com") as smtp:
+                smtp.login("miemail@miweb.com", "mi_password")
+                mensaje = f"Subject: Restablecer contraseña\n\nUsa este enlace: https://miweb.com/restablecer?token={token}"
+                smtp.sendmail("miemail@miweb.com", email, mensaje)
+
+            return jsonify({"message": "Correo enviado para restablecer la contraseña"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == "__main__":
     app.run(debug=True)

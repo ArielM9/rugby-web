@@ -1,0 +1,38 @@
+2024-11-21 12:42:39,116 - Iniciando pruebas...
+2024-11-21 12:42:39,126 - Prueba POST /login - Error: 400 - {
+  "error": "El correo electr\u00f3nico y la contrase\u00f1a son obligatorios"
+}
+
+2024-11-21 12:42:39,131 - Prueba POST /login - Error: 400 - {
+  "error": "El correo electr\u00f3nico y la contrase\u00f1a son obligatorios"
+}
+
+2024-11-21 12:42:39,135 - Prueba POST /registro - Error: 400 - {
+  "error": "Todos los campos son obligatorios"
+}
+
+2024-11-21 12:42:39,140 - Prueba POST /registro - Error: 400 - {
+  "error": "Todos los campos son obligatorios"
+}
+
+2024-11-21 12:42:39,144 - Prueba POST /recuperar_contrasena - Error: 404 - <!doctype html>
+<html lang=en>
+<title>404 Not Found</title>
+<h1>Not Found</h1>
+<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>
+
+2024-11-21 12:42:44,750 - Prueba GET /equipo/1 - Éxito: {'id': 1, 'logo': 'https://media.api-sports.io/rugby/teams/1.png', 'nombre': 'Alumni', 'pais': 'Argentina'}
+2024-11-21 12:42:50,160 - Prueba GET /partidos - Error: 500 - {
+  "error": "Object of type timedelta is not JSON serializable"
+}
+
+2024-11-21 12:42:50,523 - Prueba GET /favoritos/1 - Error: 500 - {
+  "error": "(1054, \"Unknown column 'usuario_id' in 'where clause'\")"
+}
+
+2024-11-21 12:43:10,580 - Prueba GET /liga/1 - Éxito: {'id': 1, 'logo': 'https://media.api-sports.io/rugby/leagues/1.png', 'nombre': 'Top 12', 'pais': 'Argentina'}
+2024-11-21 12:43:10,584 - Prueba POST /favoritos - Error: 400 - {
+  "error": "El usuario y los favoritos son obligatorios"
+}
+
+2024-11-21 12:43:10,584 - Pruebas finalizadas.

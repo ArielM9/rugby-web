@@ -1,200 +1,324 @@
-from flask import Flask, request, jsonify
+from datetime import timedelta, datetime
+import bcrypt
 import pymysql
+from flask import Flask, jsonify, request
+import uuid  # Para generar un token de recuperación único
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import jwt  # Para autenticación con JWT
 
-# Inicializamos la aplicación Flask
+# Configuración de la base de datos
+db_config = {
+    'host': 'db4free.net',
+    'user': 'ariel_admin',
+    'password': 'quieroentrar',
+    'database': 'rugby_web',
+    'cursorclass': pymysql.cursors.DictCursor,
+}
+
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'tu_clave_secreta'  # Cambia esto por una clave secreta real
 
-# Función para obtener la conexión a la base de datos
+# Variable global para almacenar partidos cacheados
+cache_partidos = {"data": [], "last_updated": None}
+
+# Conexión a la base de datos
 def get_db_connection():
-    """Establece la conexión a la base de datos MySQL."""
-    connection = pymysql.connect(
-        host='sql310.infinityfree.com',  # Dirección del servidor de la base de datos
-        user='usuario',  # Reemplaza con tu usuario de MySQL
-        password='contraseña',  # Reemplaza con tu contraseña de MySQL
-        database='mi_base_de_datos'  # Reemplaza con el nombre de tu base de datos
-    )
+    connection = pymysql.connect(**db_config)
     return connection
 
-# Función para validar la entrada de datos en las solicitudes
-def validate_inputs(data, required_fields):
-    """Valida que los campos requeridos estén presentes y no vacíos."""
-    for field in required_fields:
-        if field not in data or not data[field]:
-            return f"El campo {field} es obligatorio."
-    return None
-
-# Ruta para obtener partidos desde la base de datos, filtrados por fecha
-@app.route('/api/partidos', methods=['GET'])
-def obtener_partidos():
-    """Obtiene los partidos de la base de datos, ordenados por fecha."""
-    fecha = request.args.get('fecha')  # Obtenemos la fecha como parámetro de consulta
-    if not fecha:
-        return jsonify({'error': 'El parámetro "fecha" es obligatorio.'}), 400
-
-    # Verificar que la fecha tenga el formato correcto (YYYY-MM-DD)
-    if not fecha.isdigit() or len(fecha) != 10 or fecha[4] != '-' or fecha[7] != '-':
-        return jsonify({'error': 'El formato de la fecha es incorrecto. Use YYYY-MM-DD.'}), 400
-
-    try:
-        # Abrimos la conexión a la base de datos
-        connection = get_db_connection()
-        with connection.cursor(pymysql.cursors.DictCursor) as cursor:
-            # Realizamos la consulta para obtener los partidos desde la fecha proporcionada
-            query = """
-                SELECT * FROM partidos 
-                WHERE fecha >= %s
-                ORDER BY fecha ASC, hora ASC
-            """
-            cursor.execute(query, (fecha,))
-            partidos = cursor.fetchall()
-
-        if partidos:
-            return jsonify(partidos), 200  # Devolvemos los partidos encontrados
-        else:
-            return jsonify({'message': 'No se encontraron partidos para esta fecha.'}), 404  # Si no hay partidos
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500  # En caso de error
-    finally:
-        connection.close()  # Cerramos la conexión
-
-# Ruta para registrar un nuevo usuario en la base de datos
-@app.route('/api/registro', methods=['POST'])
-def registro():
-    """Registra un nuevo usuario en la base de datos."""
-    data = request.json  # Obtenemos los datos del cuerpo de la solicitud
-    error = validate_inputs(data, ['nombre', 'email', 'password'])  # Validamos los campos requeridos
-    if error:
-        return jsonify({'error': error}), 400  # Si hay un error, respondemos con un código 400
-
-    nombre = data['nombre']
-    email = data['email']
-    password = data['password']
-
-    try:
-        # Abrimos la conexión a la base de datos
-        connection = get_db_connection()
-        with connection.cursor() as cursor:
-            # Insertamos los datos del nuevo usuario en la tabla 'usuarios'
-            cursor.execute(
-                "INSERT INTO usuarios (nombre, email, password) VALUES (%s, %s, %s)",
-                (nombre, email, password)
-            )
-            connection.commit()  # Confirmamos la transacción
-
-        return jsonify({'message': 'Usuario registrado con éxito.'}), 201  # Respuesta exitosa
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500  # Si ocurre un error
-
-    finally:
-        connection.close()  # Cerramos la conexión
-
-# Ruta para iniciar sesión de un usuario, validando sus credenciales
-@app.route('/api/login', methods=['POST'])
-def login():
-    """Verifica las credenciales de un usuario para iniciar sesión."""
+# Ruta para crear un usuario (registro)
+@app.route('/registro', methods=['POST'])
+def crear_usuario():
     data = request.json
-    error = validate_inputs(data, ['email', 'password'])  # Validamos los campos requeridos
-    if error:
-        return jsonify({'error': error}), 400  # Si hay un error, respondemos con un código 400
+    nombre = data.get('nombre')
+    email = data.get('email')
+    contraseña = data.get('contraseña')
 
-    email = data['email']
-    password = data['password']
+    if not nombre or not email or not contraseña:
+        return jsonify({"error": "Todos los campos son obligatorios"}), 400
 
+    # Encriptar la contraseña
+    hashed_password = bcrypt.hashpw(contraseña.encode('utf-8'), bcrypt.gensalt())
+
+    # Conectar a la base de datos
+    connection = get_db_connection()
     try:
-        # Abrimos la conexión a la base de datos
-        connection = get_db_connection()
-        with connection.cursor(pymysql.cursors.DictCursor) as cursor:
-            # Consultamos la base de datos para verificar las credenciales
-            cursor.execute("SELECT * FROM usuarios WHERE email = %s AND password = %s", (email, password))
-            usuario = cursor.fetchone()  # Obtenemos el primer resultado
+        with connection.cursor() as cursor:
+            # Comprobar si el correo ya está registrado
+            cursor.execute("SELECT * FROM usuarios WHERE email = %s", (email,))
+            if cursor.fetchone():
+                return jsonify({"error": "El correo electrónico ya está registrado"}), 400
+            
+            # Insertar el nuevo usuario
+            cursor.execute("INSERT INTO usuarios (nombre, email, contraseña) VALUES (%s, %s, %s)",
+                           (nombre, email, hashed_password))
+            connection.commit()
 
-        if usuario:
-            return jsonify({'message': 'Inicio de sesión exitoso.'}), 200  # Si las credenciales son correctas
-        else:
-            return jsonify({'error': 'Credenciales inválidas.'}), 401  # Si las credenciales son incorrectas
-
+        return jsonify({"message": "Usuario creado exitosamente"}), 201
     except Exception as e:
-        return jsonify({'error': str(e)}), 500  # Si ocurre un error
-
+        return jsonify({"error": str(e)}), 500
     finally:
-        connection.close()  # Cerramos la conexión
+        connection.close()
 
-# Ruta para obtener los detalles de un usuario por su ID
-@app.route('/api/usuario/<int:id>', methods=['GET'])
+# Ruta para obtener la información del usuario
+@app.route('/usuario/<int:id>', methods=['GET'])
 def obtener_usuario(id):
-    """Obtiene los detalles de un usuario por su ID."""
+    connection = get_db_connection()
     try:
-        # Abrimos la conexión a la base de datos
-        connection = get_db_connection()
-        with connection.cursor(pymysql.cursors.DictCursor) as cursor:
-            # Consultamos los datos del usuario con el ID proporcionado
+        with connection.cursor() as cursor:
             cursor.execute("SELECT * FROM usuarios WHERE id = %s", (id,))
             usuario = cursor.fetchone()
-
-        if usuario:
-            return jsonify(usuario), 200  # Devolvemos los detalles del usuario
-        else:
-            return jsonify({'message': 'Usuario no encontrado.'}), 404  # Si no se encuentra el usuario
-
+            if not usuario:
+                return jsonify({"error": "Usuario no encontrado"}), 404
+            return jsonify(usuario)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500  # Si ocurre un error
-
+        return jsonify({"error": str(e)}), 500
     finally:
-        connection.close()  # Cerramos la conexión
+        connection.close()
 
-# Ruta para actualizar los datos de un usuario
-@app.route('/api/usuario/<int:id>', methods=['PUT'])
-def actualizar_usuario(id):
-    """Actualiza los datos de un usuario específico."""
-    data = request.json  # Obtenemos los datos del cuerpo de la solicitud
-    error = validate_inputs(data, ['nombre', 'email'])  # Validamos los campos requeridos
-    if error:
-        return jsonify({'error': error}), 400  # Si hay un error, respondemos con un código 400
+# Ruta para modificar la información del usuario
+@app.route('/usuario/<int:id>', methods=['PUT'])
+def modificar_usuario(id):
+    data = request.json
+    nombre = data.get('nombre')
+    email = data.get('email')
+    contraseña = data.get('contraseña')
 
-    nombre = data['nombre']
-    email = data['email']
+    if not nombre and not email and not contraseña:
+        return jsonify({"error": "Al menos un campo debe ser proporcionado"}), 400
 
+    # Conectar a la base de datos
+    connection = get_db_connection()
     try:
-        # Abrimos la conexión a la base de datos
-        connection = get_db_connection()
         with connection.cursor() as cursor:
-            # Actualizamos los datos del usuario con el ID proporcionado
-            cursor.execute(
-                "UPDATE usuarios SET nombre = %s, email = %s WHERE id = %s",
-                (nombre, email, id)
-            )
-            connection.commit()  # Confirmamos la transacción
+            if nombre:
+                cursor.execute("UPDATE usuarios SET nombre = %s WHERE id = %s", (nombre, id))
+            if email:
+                cursor.execute("UPDATE usuarios SET email = %s WHERE id = %s", (email, id))
+            if contraseña:
+                hashed_password = bcrypt.hashpw(contraseña.encode('utf-8'), bcrypt.gensalt())
+                cursor.execute("UPDATE usuarios SET contraseña = %s WHERE id = %s", (hashed_password, id))
+            connection.commit()
 
-        return jsonify({'message': 'Usuario actualizado con éxito.'}), 200  # Respuesta exitosa
-
+        return jsonify({"message": "Usuario actualizado exitosamente"}), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500  # Si ocurre un error
-
+        return jsonify({"error": str(e)}), 500
     finally:
-        connection.close()  # Cerramos la conexión
+        connection.close()
 
-# Ruta para eliminar un usuario de la base de datos
-@app.route('/api/usuario/<int:id>', methods=['DELETE'])
+# Ruta para eliminar un usuario
+@app.route('/usuario/<int:id>', methods=['DELETE'])
 def eliminar_usuario(id):
-    """Elimina un usuario de la base de datos."""
+    connection = get_db_connection()
     try:
-        # Abrimos la conexión a la base de datos
-        connection = get_db_connection()
         with connection.cursor() as cursor:
-            # Eliminamos el usuario con el ID proporcionado
             cursor.execute("DELETE FROM usuarios WHERE id = %s", (id,))
-            connection.commit()  # Confirmamos la transacción
-
-        return jsonify({'message': 'Usuario eliminado con éxito.'}), 200  # Respuesta exitosa
-
+            connection.commit()
+        return jsonify({"message": "Usuario eliminado exitosamente"}), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500  # Si ocurre un error
-
+        return jsonify({"error": str(e)}), 500
     finally:
-        connection.close()  # Cerramos la conexión
+        connection.close()
 
-# Inicia la aplicación Flask
+# Ruta para login (autenticación con JWT)
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.json
+    email = data.get('email')
+    contraseña = data.get('contraseña')
+
+    if not email or not contraseña:
+        return jsonify({"error": "El correo electrónico y la contraseña son obligatorios"}), 400
+
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM usuarios WHERE email = %s", (email,))
+            usuario = cursor.fetchone()
+            if not usuario:
+                return jsonify({"error": "Correo electrónico o contraseña incorrectos"}), 401
+
+            # Verificar la contraseña
+            if not bcrypt.checkpw(contraseña.encode('utf-8'), usuario['contraseña'].encode('utf-8')):
+                return jsonify({"error": "Correo electrónico o contraseña incorrectos"}), 401
+
+            # Generar un token JWT
+            token = jwt.encode({'id': usuario['id'], 'exp': datetime.utcnow() + timedelta(hours=1)}, app.config['SECRET_KEY'], algorithm='HS256')
+            return jsonify({'token': token}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        connection.close()
+
+# Ruta para recuperar contraseña (enviando un correo con un enlace de recuperación)
+@app.route('/recuperar_contraseña', methods=['POST'])
+def recuperar_contraseña():
+    data = request.json
+    email = data.get('email')
+
+    if not email:
+        return jsonify({"error": "El correo electrónico es obligatorio"}), 400
+
+    # Generar un token único para la recuperación de la contraseña
+    token = str(uuid.uuid4())
+
+    # Aquí debería ir el código para guardar el token en la base de datos asociado al usuario
+    # (por ejemplo, en una tabla `recuperacion_tokens` con `email`, `token` y `fecha_expiracion`)
+
+    # Enviar el token por correo electrónico al usuario
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = 'tu_correo@gmail.com'
+        msg['To'] = email
+        msg['Subject'] = 'Recuperación de Contraseña'
+
+        body = f'Haz clic en el siguiente enlace para restablecer tu contraseña: http://localhost:5000/restablecer_contraseña/{token}'
+        msg.attach(MIMEText(body, 'plain'))
+
+        # Enviar el correo electrónico usando SMTP
+        with smtplib.SMTP('smtp.gmail.com', 587) as server:
+            server.starttls()
+            server.login('tu_correo@gmail.com', 'tu_contraseña')
+            text = msg.as_string()
+            server.sendmail(msg['From'], msg['To'], text)
+
+        return jsonify({"message": "Correo enviado con el enlace para recuperar la contraseña"}), 200
+    except Exception as e:
+        return jsonify({"error": f"No se pudo enviar el correo: {str(e)}"}), 500
+
+# Ruta para crear favoritos
+@app.route('/favoritos', methods=['POST'])
+def crear_favoritos():
+    data = request.json
+    usuario_id = data.get('usuario_id')
+    favoritos = data.get('favoritos')  # Lista de IDs de equipos y ligas
+
+    if not usuario_id or not favoritos:
+        return jsonify({"error": "El usuario y los favoritos son obligatorios"}), 400
+
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            for favorito in favoritos:
+                # Insertar cada favorito
+                cursor.execute("INSERT INTO favoritos (usuario_id, favorito_id) VALUES (%s, %s)",
+                               (usuario_id, favorito))
+            connection.commit()
+
+        return jsonify({"message": "Favoritos creados exitosamente"}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        connection.close()
+
+# Ruta para eliminar favoritos
+@app.route('/favoritos', methods=['DELETE'])
+def eliminar_favoritos():
+    data = request.json
+    usuario_id = data.get('usuario_id')
+    favorito_id = data.get('favorito_id')
+
+    if not usuario_id or not favorito_id:
+        return jsonify({"error": "El usuario y el favorito son obligatorios"}), 400
+
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM favoritos WHERE usuario_id = %s AND favorito_id = %s", 
+                           (usuario_id, favorito_id))
+            connection.commit()
+
+        return jsonify({"message": "Favorito eliminado exitosamente"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        connection.close()
+
+# Ruta para obtener los favoritos de un usuario
+@app.route('/favoritos/<int:usuario_id>', methods=['GET'])
+def obtener_favoritos(usuario_id):
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM favoritos WHERE usuario_id = %s", (usuario_id,))
+            favoritos = cursor.fetchall()
+            return jsonify(favoritos), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        connection.close()
+
+# Ruta para obtener los partidos de los próximos 15 días
+@app.route('/partidos', methods=['GET'])
+def obtener_partidos():
+    fecha_actual = datetime.now()
+    fecha_final = fecha_actual + timedelta(days=15)
+    
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT * FROM partidos 
+                WHERE fecha BETWEEN %s AND %s
+                ORDER BY fecha ASC
+            """, (fecha_actual, fecha_final))
+            partidos = cursor.fetchall()
+            return jsonify(partidos), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        connection.close()
+
+# Ruta para obtener partidos por ID
+@app.route('/partido/<int:id>', methods=['GET'])
+def obtener_partido(id):
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM partidos WHERE id = %s", (id,))
+            partido = cursor.fetchone()
+            if not partido:
+                return jsonify({"error": "Partido no encontrado"}), 404
+            return jsonify(partido), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        connection.close()
+
+# Ruta para obtener equipos por ID
+@app.route('/equipo/<int:id>', methods=['GET'])
+def obtener_equipo(id):
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM equipos WHERE id = %s", (id,))
+            equipo = cursor.fetchone()
+            if not equipo:
+                return jsonify({"error": "Equipo no encontrado"}), 404
+            return jsonify(equipo), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        connection.close()
+
+# Ruta para obtener ligas por ID
+@app.route('/liga/<int:id>', methods=['GET'])
+def obtener_liga(id):
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM ligas WHERE id = %s", (id,))
+            liga = cursor.fetchone()
+            if not liga:
+                return jsonify({"error": "Liga no encontrada"}), 404
+            return jsonify(liga), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        connection.close()
+
+# Iniciar la aplicación
 if __name__ == '__main__':
     app.run(debug=True)

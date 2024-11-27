@@ -1,0 +1,62 @@
+2024-11-26 09:41:54,165 - Iniciando pruebas...
+2024-11-26 09:41:54,314 - Prueba POST /login - Error: 400 - {
+  "error": "El correo electr\u00f3nico y la contrase\u00f1a son obligatorios"
+}
+
+2024-11-26 09:41:54,320 - Prueba POST /login - Error: 400 - {
+  "error": "El correo electr\u00f3nico y la contrase\u00f1a son obligatorios"
+}
+
+2024-11-26 09:41:54,330 - Prueba POST /registro - Error: 400 - {
+  "error": "Todos los campos son obligatorios"
+}
+
+2024-11-26 09:41:54,337 - Prueba POST /registro - Error: 400 - {
+  "error": "Todos los campos son obligatorios"
+}
+
+2024-11-26 09:41:54,344 - Prueba POST /favoritos - Error: 400 - {
+  "error": "El usuario y los favoritos son obligatorios"
+}
+
+2024-11-26 09:41:59,815 - Prueba GET /favoritos/1 - Error: 500 - {
+  "error": "(1054, \"Unknown column 'usuario_id' in 'where clause'\")"
+}
+
+2024-11-26 09:42:05,350 - Prueba GET /equipo/1 - Éxito: {'id': 1, 'logo': 'https://media.api-sports.io/rugby/teams/1.png', 'nombre': 'Alumni', 'pais': 'Argentina'}
+2024-11-26 09:42:05,950 - Prueba GET /partidos - Éxito: []
+2024-11-26 09:42:11,470 - Prueba GET /liga/1 - Éxito: {'id': 1, 'logo': 'https://media.api-sports.io/rugby/leagues/1.png', 'nombre': 'Top 12', 'pais': 'Argentina'}
+2024-11-26 09:42:11,481 - Prueba DELETE /favoritos/1 - Error: 405 - <!doctype html>
+<html lang=en>
+<title>405 Method Not Allowed</title>
+<h1>Method Not Allowed</h1>
+<p>The method is not allowed for the requested URL.</p>
+
+2024-11-26 09:42:11,482 - Pruebas finalizadas.
+2024-11-26 09:47:49,423 - Iniciando pruebas...
+2024-11-26 09:47:49,423 - Prueba POST /login - Error: 400 - {
+  "error": "El correo electr\u00f3nico y la contrase\u00f1a son obligatorios"
+}
+
+2024-11-26 09:47:49,423 - Prueba POST /registro - Error: 400 - {
+  "error": "Todos los campos son obligatorios"
+}
+
+2024-11-26 09:47:49,447 - Prueba POST /favoritos - Error: 400 - {
+  "error": "El usuario y los favoritos son obligatorios"
+}
+
+2024-11-26 09:47:54,946 - Prueba GET /favoritos/1 - Error: 500 - {
+  "error": "(1054, \"Unknown column 'usuario_id' in 'where clause'\")"
+}
+
+2024-11-26 09:47:55,456 - Prueba GET /equipo/1 - Éxito: {'id': 1, 'logo': 'https://media.api-sports.io/rugby/teams/1.png', 'nombre': 'Alumni', 'pais': 'Argentina'}
+2024-11-26 09:48:01,214 - Prueba GET /partidos - Éxito: []
+2024-11-26 09:48:01,827 - Prueba GET /liga/1 - Éxito: {'id': 1, 'logo': 'https://media.api-sports.io/rugby/leagues/1.png', 'nombre': 'Top 12', 'pais': 'Argentina'}
+2024-11-26 09:48:01,833 - Prueba DELETE /favoritos/1 - Error: 405 - <!doctype html>
+<html lang=en>
+<title>405 Method Not Allowed</title>
+<h1>Method Not Allowed</h1>
+<p>The method is not allowed for the requested URL.</p>
+
+2024-11-26 09:48:01,833 - Pruebas finalizadas.
